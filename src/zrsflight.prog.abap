@@ -1,0 +1,213 @@
+*****           Implementation of object type SFLIGHT              *****
+INCLUDE <object>.
+BEGIN_DATA OBJECT. " Do not change.. DATA is generated
+* only private members may be inserted into structure private
+DATA:
+" begin of private,
+"   to declare private attributes remove comments and
+"   insert private attributes here ...
+" end of private,
+  BEGIN OF KEY,
+      AIRLINEID LIKE SFLIGHT-CARRID,
+      CONNECTIONID LIKE SFLIGHT-CONNID,
+      FLIGHTDATE LIKE SFLIGHT-FLDATE,
+  END OF KEY,
+      BOOKINGLIST TYPE SWC_OBJECT OCCURS 0,
+      FLIGHTID(255).
+END_DATA OBJECT. " Do not change.. DATA is generated
+
+
+begin_method display changing container.
+
+SET PARAMETER ID 'CAR' FIELD object-key-airlineid.
+SET PARAMETER ID 'CON' FIELD object-key-connectionid.
+SET PARAMETER ID 'DAY' FIELD object-key-flightdate.
+
+CALL TRANSACTION 'BC_GLOBAL_SFLGH_DISP' WITH AUTHORITY-CHECK
+     AND SKIP FIRST SCREEN.
+
+end_method.
+
+
+
+get_property bookinglist changing container.
+
+TABLES: sbook.
+
+DATA: booking TYPE swc_object.
+
+DATA: BEGIN OF sbook_key,
+        carrid   LIKE sbook-carrid,
+        bookid   LIKE sbook-bookid,
+      END OF sbook_key.
+
+REFRESH object-bookinglist.
+
+SELECT carrid bookid FROM sbook
+       INTO CORRESPONDING FIELDS OF sbook_key
+       WHERE carrid = object-key-airlineid
+       AND   connid = object-key-connectionid
+       AND   fldate = object-key-flightdate.
+
+  swc_create_object booking 'SBOOK' sbook_key.
+  APPEND booking TO object-bookinglist.
+
+ENDSELECT.
+
+swc_set_table container 'BookingList' object-bookinglist.
+end_property.
+
+
+
+begin_method existencecheck changing container.
+tables sflight.
+SELECT SINGLE       * FROM  sflight
+       WHERE  carrid      = object-key-airlineid
+       AND    connid      = object-key-connectionid
+       AND    fldate      = object-key-flightdate.
+
+IF sy-subrc NE 0.
+  exit_return 0001 space space space space.
+ENDIF.
+
+end_method.
+
+
+
+get_property flightid changing container.
+DATA cfldate(20) TYPE c.
+WRITE object-key-flightdate TO cfldate.
+CONCATENATE
+   object-key-airlineid
+   object-key-connectionid
+   cfldate
+  INTO object-flightid
+  SEPARATED BY space.
+swc_set_element container 'FlightID' object-flightid.
+end_property.
+
+BEGIN_METHOD GETLIST CHANGING CONTAINER.
+DATA:
+      AIRLINE LIKE BAPISFLKEY-AIRLINEID,
+      DESTINATIONFROM LIKE BAPISFLDST,
+      DESTINATIONTO LIKE BAPISFLDST,
+      MAXROWS LIKE BAPISFLAUX-BAPIMAXROW,
+      DATERANGE LIKE BAPISFLDRA OCCURS 0,
+      EXTENSIONIN LIKE BAPIPAREX OCCURS 0,
+      FLIGHTLIST LIKE BAPISFLDAT OCCURS 0,
+      EXTENSIONOUT LIKE BAPIPAREX OCCURS 0,
+      RETURN LIKE BAPIRET2 OCCURS 0.
+  SWC_GET_ELEMENT CONTAINER 'Airline' AIRLINE.
+  SWC_GET_ELEMENT CONTAINER 'DestinationFrom' DESTINATIONFROM.
+  SWC_GET_ELEMENT CONTAINER 'DestinationTo' DESTINATIONTO.
+  SWC_GET_ELEMENT CONTAINER 'MaxRows' MAXROWS.
+  SWC_GET_TABLE CONTAINER 'DateRange' DATERANGE.
+  SWC_GET_TABLE CONTAINER 'ExtensionIn' EXTENSIONIN.
+  CALL FUNCTION 'BAPI_FLIGHT_GETLIST'
+    EXPORTING
+      MAX_ROWS = MAXROWS
+      DESTINATION_TO = DESTINATIONTO
+      DESTINATION_FROM = DESTINATIONFROM
+      AIRLINE = AIRLINE
+    TABLES
+      RETURN = RETURN
+      EXTENSION_OUT = EXTENSIONOUT
+      FLIGHT_LIST = FLIGHTLIST
+      EXTENSION_IN = EXTENSIONIN
+      DATE_RANGE = DATERANGE
+    EXCEPTIONS
+      OTHERS = 01.
+  CASE SY-SUBRC.
+    WHEN 0.            " OK
+    WHEN OTHERS.       " to be implemented
+  ENDCASE.
+  SWC_SET_TABLE CONTAINER 'FlightList' FLIGHTLIST.
+  SWC_SET_TABLE CONTAINER 'ExtensionOut' EXTENSIONOUT.
+  SWC_SET_TABLE CONTAINER 'Return' RETURN.
+END_METHOD.
+
+BEGIN_METHOD GETDETAIL CHANGING CONTAINER.
+DATA:
+      FLIGHTDATA LIKE BAPISFLDAT,
+      ADDITIONALINFO LIKE BAPISFLADD,
+      AVAILIBILITY LIKE BAPISFLAVA,
+      EXTENSIONIN LIKE BAPIPAREX OCCURS 0,
+      EXTENSIONOUT LIKE BAPIPAREX OCCURS 0,
+      RETURN LIKE BAPIRET2 OCCURS 0.
+  SWC_GET_TABLE CONTAINER 'ExtensionIn' EXTENSIONIN.
+  CALL FUNCTION 'BAPI_FLIGHT_GETDETAIL'
+    EXPORTING
+      AIRLINEID = OBJECT-KEY-AIRLINEID
+      CONNECTIONID = OBJECT-KEY-CONNECTIONID
+      FLIGHTDATE = OBJECT-KEY-FLIGHTDATE
+    IMPORTING
+      AVAILIBILITY = AVAILIBILITY
+      ADDITIONAL_INFO = ADDITIONALINFO
+      FLIGHT_DATA = FLIGHTDATA
+    TABLES
+      EXTENSION_IN = EXTENSIONIN
+      EXTENSION_OUT = EXTENSIONOUT
+      RETURN = RETURN
+    EXCEPTIONS
+      OTHERS = 01.
+  CASE SY-SUBRC.
+    WHEN 0.            " OK
+    WHEN OTHERS.       " to be implemented
+  ENDCASE.
+  SWC_SET_ELEMENT CONTAINER 'FlightData' FLIGHTDATA.
+  SWC_SET_ELEMENT CONTAINER 'AdditionalInfo' ADDITIONALINFO.
+  SWC_SET_ELEMENT CONTAINER 'Availibility' AVAILIBILITY.
+  SWC_SET_TABLE CONTAINER 'ExtensionOut' EXTENSIONOUT.
+  SWC_SET_TABLE CONTAINER 'Return' RETURN.
+END_METHOD.
+
+BEGIN_METHOD CHECKAVAILIBILITY CHANGING CONTAINER.
+DATA:
+      AVAILIBILITY LIKE BAPISFLAVA,
+      RETURN LIKE BAPIRET2 OCCURS 0.
+  CALL FUNCTION 'BAPI_FLIGHT_CHECKAVAILIBILITY'
+    EXPORTING
+      FLIGHTDATE = OBJECT-KEY-FLIGHTDATE
+      CONNECTIONID = OBJECT-KEY-CONNECTIONID
+      AIRLINEID = OBJECT-KEY-AIRLINEID
+    IMPORTING
+      AVAILIBILITY = AVAILIBILITY
+    TABLES
+      RETURN = RETURN
+    EXCEPTIONS
+      OTHERS = 01.
+  CASE SY-SUBRC.
+    WHEN 0.            " OK
+    WHEN OTHERS.       " to be implemented
+  ENDCASE.
+  SWC_SET_ELEMENT CONTAINER 'Availibility' AVAILIBILITY.
+  SWC_SET_TABLE CONTAINER 'Return' RETURN.
+END_METHOD.
+
+BEGIN_METHOD SAVEREPLICA CHANGING CONTAINER.
+DATA:
+      FLIGHTDATA LIKE BAPISFLREP,
+      TESTRUN LIKE BAPISFLAUX-TESTRUN,
+      EXTENSIONIN LIKE BAPIPAREX OCCURS 0,
+      RETURN LIKE BAPIRET2 OCCURS 0.
+  SWC_GET_ELEMENT CONTAINER 'FlightData' FLIGHTDATA.
+  SWC_GET_ELEMENT CONTAINER 'TestRun' TESTRUN.
+  IF SY-SUBRC <> 0.
+    MOVE SPACE TO TESTRUN.
+  ENDIF.
+  SWC_GET_TABLE CONTAINER 'ExtensionIn' EXTENSIONIN.
+  CALL FUNCTION 'BAPI_FLIGHT_SAVEREPLICA'
+    EXPORTING
+      FLIGHT_DATA = FLIGHTDATA
+      TEST_RUN = TESTRUN
+    TABLES
+      EXTENSION_IN = EXTENSIONIN
+      RETURN = RETURN
+    EXCEPTIONS
+      OTHERS = 01.
+  CASE SY-SUBRC.
+    WHEN 0.            " OK
+    WHEN OTHERS.       " to be implemented
+  ENDCASE.
+  SWC_SET_TABLE CONTAINER 'Return' RETURN.
+END_METHOD.
